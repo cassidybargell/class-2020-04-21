@@ -6,7 +6,7 @@ output: html_document
 ```{r setup, include=FALSE}
 # Thanks to Yao Yu for some excellent work on this script.
 
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(infer)
 library(tidyverse)
 library(tidymodels)
@@ -34,25 +34,118 @@ cces <- read_rds("cces_initial.rds")
 
 **Prompt:** Start by creating a logistic model using every variable to try and predict the Trump vote. Consider using `logistic_reg()`, `set_engine()`, and `fit()`. Save the model to an object named `logistic_mod` and the fit to `logistic_fit`. Feel free to refer to the code from last week or to the code in the *Primer*.
 
+```{r}
+logistic_mod <- logistic_reg() %>%
+  set_engine("glm")
+
+logistic_fit <- fit(logistic_mod,
+                    factor(trump) ~ gender + age + educ + race + income + party + ideology, 
+                    data = cces)
+
+x <- logistic_fit$fit %>%
+  tidy(conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high)
+
+x
+```
+
+
 1) Print out the model with the confidence interval and interpret the coefficient of `gender`? (Hint: use the divide-by-four rule.) Explain the association of Trump-voting with variables like `income` and `party` to your smart-but-not-mathematical boss. Why doesn't income matter?
+
+Compared to males, females are 8.5 % less likely to vote for trump than a male if all other variables are controlled for. Income does not matter because the coefficient is so close to 0, changing the income will likely have no effect, this is because we are also using ideology and party. 
 
 2) What is the expected vote for Dom - who is Male, 37, holds a 4-year degree (placing him in the 5 `educ` bucket), Asian, makes $77,000, with `ideology` and `party` equal to 3. (Hint: use predict().)
 
+```{r}
+dom <- tibble(
+  gender = "Male",
+  age = 37,
+  educ = 5,
+  race = "Asian", 
+  income = 8,
+  ideology = 3,
+  party = 3
+)
+
+predict(logistic_fit, 
+        new_data = dom)
+```
 
 
 # Scene 3
 
 **Prompt:** Great! Now that you have created a logistic model to predict Trump vote, create two more models: CART (rpart) and randomforest. Set the seed to 1005. For rand_forest, set mtry = 7 to use all our predictors and set trees = 50 so your computer doesn't take forever to run.
 
+```{r}
+set.seed(1005)
+
+tree_mod <- decision_tree() %>%
+  set_engine("rpart",
+             model = TRUE) %>%
+  set_mode("classification")
+
+house_region_tree <- fit(tree_mod,
+                         factor(trump) ~ gender + age + educ + race + income + party + ideology, 
+                         data = cces)
+
+house_region_tree$fit %>%
+  prp(extra = "auto", varlen = 0, faclen = 0)
+
+forest_mod <- rand_forest(mtry = 7, trees = 50) %>%
+  set_engine("randomForest") %>%
+  set_mode("classification")
+
+house_forest <- fit(forest_mod,
+                    factor(trump) ~ gender + age + educ + race + income + party + ideology,
+                    data = cces)
+
+house_forest
+
+tibble(`Error rate` = house_forest$fit$err.rate[, "OOB"],
+       Trees = 1:50) %>%
+  ggplot(aes(x = Trees, y = `Error rate`)) +
+  geom_line() +
+  theme_classic()
+```
+
+
 1) Interpret the output of the CART model (Hint: set extra = "auto" in `prp()`.) Where would Dom fall in this decision tree? 
+
+ideology less than 4, so dom would fall at 0
 
 2) Looking at the randomForest model, what does the OOB error tell us? Interpret the first row, second column of the confusion matrix, what does that 920 represent? How does 920 relate to the class.error of 0.078?
 
-
+OOB is 9.04%. 
 
 # Scene 4
 
 **Prompt:** Now that we have our three models, let's see how well they stack up against each other. Use `predict()` on our three models with cces as the data. Then, use `bind_cols()` to combine the cces data with our predictions. Finally, use `accuracy()` to get the proportion of votes that the model correctly predicted
+
+```{r}
+house_pred <- cces %>%
+  mutate(modal = 1, 
+         lo)
+  
+  
+  ouse_preds <- house_ch13 %>%
+  mutate(modal = 1,
+         logistic = predict(house_logistic, new_data = house_ch13) %>% 
+           pull(.pred_class),
+         linear = 1 * (predict(house_linear, new_data = house_ch13) > 0.5),
+         tree = predict(state_year_tree, new_data = house_ch13) %>% 
+           pull(.pred_class),
+         forest = predict(house_forest, new_data = house_ch13) %>% 
+           pull(.pred_class))
+  
+  preds <- cces %>%
+  mutate(logistic = predict(house_logistic_pre, new_data = house_2018) %>% 
+           pull(.pred_class),
+         tree = predict(house_tree_pre, new_data = house_2018)  %>% 
+           pull(.pred_class),
+         forest = predict(house_forest_pre, new_data = house_2018)  %>% 
+           pull(.pred_class))
+```
+
 
 1) Compare the accuracy of our three models, use bind_rows() to put the three in a nice tibble. Which model appears to be the best?
 
